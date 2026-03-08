@@ -1,15 +1,19 @@
-name: Release Signed APKs
+name: mpvKt - Build & Signed Release
 
 permissions:
   contents: write
 
 on:
   push:
+    branches: [ main ]
     tags:
       - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # ← Manuel "Run workflow" butonu için zorunlu!
 
 jobs:
-  release:
+  build-and-release:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,9 +31,10 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build Release APKs
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease  # detekt timeout'u önlemek için detekt'i atla
 
-      - name: Sign APKs
+      - name: Sign APKs (only on tag or manual dispatch)
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: r0adkll/sign-android-release@v1
         id: sign_app
         with:
@@ -41,20 +46,37 @@ jobs:
         env:
           BUILD_TOOLS_VERSION: "34.0.0"
 
-      - name: Get tag name
-        run: echo "VERSION_TAG=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+      - name: Upload Unsigned Artifacts (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpvKt-unsigned-apks
+          path: |
+            app/build/outputs/apk/release/*-unsigned.apk
 
-      - name: Prepare Signed APKs
+      - name: Get tag name (for release)
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "VERSION_TAG=manual-test-${{ github.sha }}" >> $GITHUB_ENV
+          else
+            echo "VERSION_TAG=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+          fi
+
+      - name: Prepare Signed Files for Release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         run: |
           mkdir -p release-files
           cp app/build/outputs/apk/release/*-signed*.apk release-files/ || true
-          # Eğer universal varsa rename et
+          # İsimleri güzelleştir (örneğin mpvKt-arm64-v0.1.6.apk)
           for file in release-files/*; do
-            newname=$(echo \( file | sed "s/app-\(.*\)-release-signed/apkKt-\1- \){{ env.VERSION_TAG }}/g")
-            mv "$file" "$newname" || true
+            if [ -f "$file" ]; then
+              newname=$(echo "\( file" | sed "s/app-\(.*\)-release-signed/mpvKt-\1- \){{ env.VERSION_TAG }}/g" | sed 's/-signed//g')
+              mv "$file" "$newname" || true
+            fi
           done
 
-      - name: Create GitHub Release
+      - name: Create/Update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION_TAG }}
@@ -65,5 +87,5 @@ jobs:
           body: |
             Signed APKs for mpvKt ${{ env.VERSION_TAG }}
             
-            - Download from artifacts below.
-            - SHA256 checksums will be added manually if needed.
+            - Universal, arm64-v8a vb. varyantlar mevcut.
+            - Manuel tetiklendiyse test sürümüdür.
