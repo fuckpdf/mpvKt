@@ -1,0 +1,42 @@
+name: Sign Test APK
+
+on:
+  workflow_dispatch:  # Manuel çalıştır (telefonundan Actions sekmesinden Run workflow)
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'  # adopt yerine temurin daha stabil
+          java-version: 17
+          cache: 'gradle'
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+
+      - name: Sign APK
+        uses: r0adkll/sign-android-release@v1
+        with:
+          releaseDirectory: app/build/outputs/apk/release
+          signingKeyBase64: ${{ secrets.SIGNING_KEYSTORE }}  # senin secret adın neyse
+          alias: ${{ secrets.SIGNING_KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: "34.0.0"  # mpvKt'nin kullandığı
+
+      - name: Upload Signed APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-apks
+          path: |
+            app/build/outputs/apk/release/*-signed.apk
