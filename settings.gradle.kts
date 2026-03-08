@@ -21,6 +21,7 @@ dependencyResolutionManagement {
         // Sadece JitPack'e özgü kütüphaneler buradan gelsin
         includeGroup("io.github.abdallahmehiz")
         includeGroup("com.github.abdallahmehiz")
+        includeGroup("com.github.K1rakishou")
       }
     }
   }
