@@ -10,7 +10,7 @@ on:
       - 'v*'
   pull_request:
     branches: [ main ]
-  workflow_dispatch:  # ← Manuel "Run workflow" butonu için zorunlu!
+  workflow_dispatch:
 
 jobs:
   build-and-release:
@@ -27,11 +27,27 @@ jobs:
           java-version: 17
           cache: gradle
 
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Build Release APKs
-        run: ./gradlew assembleRelease  # detekt timeout'u önlemek için detekt'i atla
+      - name: Build Release APKs (with retry)
+        run: |
+          for i in 1 2 3; do
+            echo "Build attempt $i..."
+            ./gradlew assembleRelease --no-daemon && break
+            echo "Attempt $i failed, retrying in 30s..."
+            sleep 30
+          done
 
       - name: Sign APKs (only on tag or manual dispatch)
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
@@ -67,10 +83,9 @@ jobs:
         run: |
           mkdir -p release-files
           cp app/build/outputs/apk/release/*-signed*.apk release-files/ || true
-          # İsimleri güzelleştir (örneğin mpvKt-arm64-v0.1.6.apk)
           for file in release-files/*; do
             if [ -f "$file" ]; then
-              newname=$(echo "\( file" | sed "s/app-\(.*\)-release-signed/mpvKt-\1- \){{ env.VERSION_TAG }}/g" | sed 's/-signed//g')
+              newname=$(echo "$file" | sed "s/app-\(.*\)-release-signed/mpvKt-\1-${{ env.VERSION_TAG }}/g" | sed 's/-signed//g')
               mv "$file" "$newname" || true
             fi
           done
@@ -81,7 +96,7 @@ jobs:
         with:
           tag_name: ${{ env.VERSION_TAG }}
           name: mpvKt ${{ env.VERSION_TAG }}
-          draft: true  # İstersen false yap, direkt yayınlansın
+          draft: true
           prerelease: false
           files: release-files/*
           body: |
